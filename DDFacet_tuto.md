@@ -2,7 +2,9 @@
 This documentation gives a brief overview of how to use DDFacet to input a LOFAR-type measurementSet and output reconstructed images. 
 
 ## Biblio 
-:page_facing_up: [DDFacet](https://arxiv.org/pdf/1712.02078) *C. Tasse, B. Hugo, M. Mirmont, O. Smirnov, M. Atemkeng, L. Bester, M.J. Hardcastle4, R. Lakhoo, S. Perkins and T. Shimwel «Faceting for direction-dependent spectral deconvolution»*
+:page_facing_up: [DDFacet](https://arxiv.org/pdf/1712.02078) *C. Tasse, B. Hugo, M. Mirmont, O. Smirnov, M. Atemkeng, L. Bester, M.J. Hardcastle4, R. Lakhoo, S. Perkins and T. Shimwel «Multi-core multi-node parallelization of the radio interferometric imaging pipeline DDFacet»*
+
+:page_facing_up: [DDFacet parallel](https://arxiv.org/pdf/1712.02078) *N. Monnier, D. Guibert, C. Tasse, N. Gac, F. Orieux, E. Raffin, O. M. Smirnov, B. V. Hugo «Faceting for direction-dependent spectral deconvolution»*
 
 ## Requirements
 - Download ddfacet singularity image: `ddf_dev_np1.22.4.sif` [NAS - vaader](https://nasext-vaader.insa-rennes.fr/ietr-vaader/)
@@ -23,22 +25,29 @@ sudo apt install saods9
 
 # Create a writable folder for data
 sudo mkdir -p /media/tasse/data
-sudo chown -R $USER:$USER /media/tasse
+sudo chown -R $USER /media/tasse
 
 ```
 
 - Once everything is ready, you can start DDFacet inside the container: 
-```bash
-# run the singularity environment
-singularity shell -B/home -B/media/tasse/data ./ddf_dev_np1.22.4.sif
-```
+    - Single architecture node (multicore I gess usage):
+    ```bash
+    # run the singularity environment
+    singularity shell -B/home -B/media/tasse/data ./ddf_dev_np1.22.4.sif
+    ```
+    - Multi architecture node
+    ```bash
+    # run the singularity environment
+    mpirun -np 2 singularity exec -B/home -B/media/tasse/data ./ddf_dev_np1.22.4.sif [DDFacet command directly]
+    ```    
+    
 This will drop you into a shell where you can run `DDF.py` with your `.parset` file and `.ms` input.
 
 ## DDF command
 
 <details>
     <summary style="cursor: pointer; color: #007bff;"> Click here to reveal the section </summary>
-
+.
 
  This comes from `DDF.py -h`.   
     
@@ -903,14 +912,16 @@ Options:
                             
                           
 
-## Example   
+## Example 
+                            
+### Single node (multicore) Execution
                             
 #### Default imaging (dirty map)
 
 ```bash
 DDF.py Template.parset \
-    --Data-MS 0000.MS \ 
-    --Output-Name default/test \ 
+    --Data-MS 0000.MS \
+    --Output-Name default/test \
     --Data-ColName DATA
 ```
                             
@@ -990,7 +1001,66 @@ SSD (Steepest-Descent Deconvolution)| 🔴 Very Slow | 🔴 Heavy | Gradient-bas
 WSCMS (Weighted Source Component Model Subtaction) | 🔴 Very Slow | 🔴 Heavy | Advanced method for complex sky models, but slow and memory-hungry.
     
     
+### Multinode Execution
+#### Requirements
+- Multinode & multicore cluster
+- Dowload python casacore: `pip install python-casacore`
+- Having a distributed MeasuremenSet or download the script to split yours [here](https://github.com/Ophelie-Renaud/ddfacet-dft-fft-g2g-tutorials). Usage: 
+    ```python
+    python split_ms_tool.py /path/to/my.ms output_prefix --criterion field --n_splits 3
+    ```
+    *where `criterion field` ∈ [`time` (default: split by observation time), `scan` (split by scan number, continuous observation sequence), `field` (split by field/source ID), `spw` (split by spectral window (frequency), `channel` (split each spectral channel into a separate MS)], `n_splits` by default limited to your MS criterion field* .
 
+
+    
+
+#### Default imaging (dirty map)
+Change the measurementSets names with your distributed measuremenSets names.
+```
+mpirun -np 2 singularity exec -B /home -B /media/tasse/data \
+./ddf_dev_np1.22.4.sif DDF.py Template.parset \
+--Data-MS 0000.MS,0000.MS \
+--Output-Name default/test \
+--Data-ColName DATA
+```
+
+#### Degridding    
+```
+mpirun -np 2 singularity exec -B /home -B /media/tasse/data \
+./ddf_dev_np1.22.4.sif DDF.py Template.parset \
+--Data-MS 0000.MS,0000.MS \
+--Output-Name predict/test \ 
+--Output-Mode Predict \ 
+--Predict-ColName DDF_PREDICT \
+--Predict-FromImage predict/test.dirty.fits
+```    
+
+#### Clean
+
+
+<p align="center">
+  <img src="https://hackmd.io/_uploads/rytkVN2Glx.png" alt="Figure DDFacet" width="400"/>
+  <br>
+  <em>The following command enables the reconstruction of a distributed MeasurementSet across a multi-node architecture, based on the work by N. Monnier et al: <a href="https://hal.science/hal-03729202/document">DDFacet parallel</a>.</em>
+</p>
+
+
+
+```
+mpirun -np 2 singularity exec -B /home -B /media/tasse/data \
+./ddf_dev_np1.22.4.sif DDF.py Template.parset \
+--Data-MS 0000.MS,0000.MS \
+--Output-Name clean/test \
+--Output-Mode Clean \
+--Deconv-Mode HMP \
+--Freq-NBand 3 \
+--Freq-NDegridBand 1 \
+--Mask-Auto True \
+--Mask-SigTh 15 \
+--Mask-AutoRMSFactor 3 \
+--Deconv-MaxMajorIter 1 \
+--Deconv-MaxMinorIter 5
+```
 
 
 ## Note
