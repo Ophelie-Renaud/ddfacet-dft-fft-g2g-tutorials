@@ -6,53 +6,42 @@ This documentation gives a brief overview of how to use DDFacet to input a LOFAR
 
 :page_facing_up: [DDFacet parallel](https://arxiv.org/pdf/1712.02078) *N. Monnier, D. Guibert, C. Tasse, N. Gac, F. Orieux, E. Raffin, O. M. Smirnov, B. V. Hugo «Faceting for direction-dependent spectral deconvolution»*
 
+## Context
+
+**DDFacet** is a radio astronomy imaging pipeline currently used in production on telescopes such as LOFAR and MeerKat. Its main purpose is to transform **MeasurementSets** (MS) — raw observational data collected by radio interferometers — into reconstructed sky images in FITS format (`*.fits`). MeasurementSets contain the measured visibilities, while the resulting FITS files provide calibrated images of the sky, ready for analysis or calibration purposes.
+
+The pipeline performs **computationally intensive** and **highly parameterized calculations**, allowing it to adapt to different observational setups and scientific requirements. 
+All available option commands are listed in the section [Exhaustive list of DDF commands](#exhaustive-list-of-ddf-commands)
+, and their explanations are provided in [Key parameter explanation](#key-parameter-explanation).
+
+To facilitate execution on **High Performance Computing (HPC) systems**, DDFacet's team provides a **parallel** and **parameterized** implementation packaged in a Singularity container (`.sif`). Singularity is a container technology designed for HPC, enabling complex applications to run with all dependencies in an isolated and reproducible environment.
+
+This tutorial provides:
+
+- Examples of running DDFacet on your own laptop in the section [Running DDFacet on your own laptop](#running-ddfacet-on-your-own-laptop), to help users familiarize themselves with the pipeline and file formats.
+- A procedure for deploying DDFacet on a multi-node HPC cluster using Slurm, described in the section Multinode Execution, for processing large MeasurementSets efficiently in parallel.
+
 ## Requirements
 - Download ddfacet singularity image: `ddf_dev_np1.22.4.sif` [NAS - vaader](https://nasext-vaader.insa-rennes.fr/ietr-vaader/)
 - Download parset example: `Template.parset` [NAS - vaader](https://nasext-vaader.insa-rennes.fr/ietr-vaader/)
 - Having a measurementSet (i.e. **\*.ms** ==> set of folders)
 - (option) Download the script that facilitates reading **\*.fits** (based on the ds9 tool): `dsm.py` [NAS - vaader](https://nasext-vaader.insa-rennes.fr/ietr-vaader/)
 
-## Preliminary step
 
-- Run the following commands to install dependencies and prepare your working environment:
-```bash
-# install singularity
-sudo apt update
-sudo apt install singularity-container -y
 
-# Install DS9 viewer (for FITS files)
-sudo apt install saods9
-
-# Create a writable folder for data
-sudo mkdir -p /media/tasse/data
-sudo chown -R $USER /media/tasse
-
-```
-
-- Once everything is ready, you can start DDFacet inside the container: 
-    - Single architecture node (multicore I gess usage):
-    ```bash
-    # run the singularity environment
-    singularity shell -B/home -B/media/tasse/data ./ddf_dev_np1.22.4.sif
-    ```
-    - Multi architecture node
-    ```bash
-    # run the singularity environment
-    mpirun -np 2 singularity exec -B/home -B/media/tasse/data ./ddf_dev_np1.22.4.sif [DDFacet command directly]
-    ```    
-    
-This will drop you into a shell where you can run `DDF.py` with your `.parset` file and `.ms` input.
-
-## DDF command
+## Exhaustive list of DDF commands
 
 <details>
     <summary style="cursor: pointer; color: #007bff;"> Click here to reveal the section </summary>
-.
 
- This comes from `DDF.py -h`.   
+| 📝 **Note**                                                   |
+| ------------------------------------------------------------ |
+|This section provides a comprehensive list of available DDF commands. It is based on the output of `DDF.py -h`. Not all commands are used in this tutorial; this is mainly for reference and advanced users.  |
+    
+
     
 ```    
-Usage: DDF.py [parset file] <options>
+Usage: DDF.py [parset file] [options]
 
 Questions and suggestions: cyril.tasse@obspm.fr
 
@@ -76,7 +65,7 @@ Options:
     --Data-ColName=COLUMN
                         MS column to image (default: CORRECTED_DATA)
     --Data-ChunkHours=N
-                        Process data in chunks of <=N hours. Use 0 for no
+                        Process data in chunks of less than or equal to N hours. Use 0 for no
                         chunking. (default: 0.0)
     --Data-Sort=0|1     if True, data will be resorted by baseline-time order
                         internally. This usually speeds up processing.
@@ -518,7 +507,7 @@ Options:
     --DDESolutions-SolsDir=DDESOLUTIONS_SOLSDIR
                         Name of the directry of the DDE Solutions which
                         contains
-                        <SolsDir>/<MSNames>/killMS.<SolsName>.sols.npz
+                        [SolsDir]/[MSNames]/killMS.[SolsName].sols.npz
                         (default: none)
     --DDESolutions-GlobalNorm=DDESOLUTIONS_GLOBALNORM
                         Option to normalise the Jones matrices (options:
@@ -909,12 +898,75 @@ Options:
                             
                             
 </details>
-                            
-                          
 
-## Example 
-                            
-### Single node (multicore) Execution
+## Key parameter explanation
+<details>
+    <summary style="cursor: pointer; color: #007bff;"> Click here to reveal the section </summary>
+    
+| 📝 **Note**                                                   |
+| ------------------------------------------------------------ |
+|This section explains the main parameters used in DDFacet, their equivalents in the PREESM dataflow model, and their default values. These parameters control the imaging and deconvolution process. The key values have been found running DDF with default values and allow to pipelines developers to set up their prototypes with the same parameters value for fair comparison. |         
+    
+### Parameters Exposed in the PREESM Dataflow Model: 
+    
+| PREESM Parameter      | DDFacet Equivalent    | DDF Value | Description                                                                                                                               |
+| --------------------- | --------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `NUM_MAJOR_CYCLE`     | `Deconv-MaxMajorIter` | `20`          | Number of CLEAN major cycles. More cycles improve convergence but increase sequential processing time.                                    |
+| `NUM_MINOR_CYCLE`     | `Deconv-MaxMinorIter` | `1000`        | Number of minor iterations per major cycle. Too small leads to incomplete deconvolution; too large adds no value.                         |
+| `NUM_KERNEL_SUPPORT`  | `CF-Support`          | `7`           | Size (in pixels) of the convolution kernel support. Small values cause artifacts; large values increase memory use without added benefit. |
+| `OVERSAMPLING_FACTOR` | `CF-OverS`            | `11`          | Oversampling factor for the convolution kernel. Larger values increase accuracy but also memory usage.                                    |
+| `NUM_KERNELS`         | `CF-Nw`               | `100`         | Number of w-projection kernels (planes) used to correct for non-coplanar baselines.                                                       |
+| `GRID_SIZE`           | `Image-NPix`          | `4000`        | Size (in pixels) of the image grid. Must match the expected field of view and resolution. $NPix =\frac{FoV (arcsec)}{CellSize(arcsec)}$                                                 |
+    
+### Constants Fixed in the PREESM Configuration:
+    
+| PREESM Constant      | DDFacet Equivalent   | Value         | Description                                                                                      |
+| -------------------- | -------------------- | ------------- | ------------------------------------------------------------------------------------------------ |
+| `Config.gain`        | `Deconv-Gain`        | `0.1`         | Fraction of the peak flux removed at each minor iteration. Low values ensure stable convergence. |
+| `Config.noisyfactor` | `Deconv-NoiseFactor` | `1.5`         | CLEAN stopping threshold, defined as a multiple of the estimated image RMS noise.                |
+| `Config.max_w`       | `CF-wmax`            | `20000`       | Maximum w-component used for gridding. Visibilities with higher w values are excluded.           |
+| `Config.cell_size`   | `Image-Cell`         | `15` (arcsec) | Angular size of an image pixel. Defines resolution and field of view.                            |                            
+</details> 
+                                              
+## Running DDFacet on your own laptop 
+a.k.a Single node (multicore) Execution
+<details>
+    <summary style="cursor: pointer; color: #007bff;"> Click here to reveal the section </summary>
+
+| 📝 **Note**                                                   |
+| ------------------------------------------------------------ |
+|The tutorial really starts here. This section how to install tools and usage of DDFacet on your own laptop considering that you have a Linux x86. |  
+
+- Run the following commands to install dependencies and prepare your working environment:
+```bash
+# install singularity
+sudo apt update
+sudo apt install singularity-container -y
+
+# Install DS9 viewer (for FITS files)
+sudo apt install saods9
+
+# Create a writable folder for data
+sudo mkdir -p /media/tasse/data
+sudo chown -R $USER /media/tasse
+
+```
+                
+
+- Once everything is ready, you can start DDFacet inside the container: 
+    - Single-node architecture (multicore):
+    ```bash
+    # run the singularity environment
+    singularity shell -B/home -B/media/tasse/data ./ddf_dev_np1.22.4.sif
+    ```
+    - Multi-node architecture 
+    ```bash
+    # run the singularity environment
+    mpirun -np 2 singularity exec -B/home -B/media/tasse/data ./ddf_dev_np1.22.4.sif [DDFacet command directly]
+    ```    
+    
+This will drop you into a shell where you can run `DDF.py` with your `.parset` file and `.ms` input.
+Here after are examples of command line usage and expected results explanation.
                             
 #### Default imaging (dirty map)
 
@@ -969,14 +1021,13 @@ DDF.py Template.parset \
   --Data-MS 0000.MS \
   --Output-Name clean/test \
   --Output-Mode Clean \
-  --Deconv-Mode HMP \
-  --Freq-NBand 3 \
+  --Deconv-Mode Hogbom \
+  --Freq-NBand 1 \
   --Freq-NDegridBand 1 \
-  --Mask-Auto True \
-  --Mask-SigTh 15 \
-  --Mask-AutoRMSFactor 3 \
+  --Mask-Auto False \
   --Deconv-MaxMajorIter 1 \
-  --Deconv-MaxMinorIter 5
+  --Deconv-MaxMinorIter 3 \
+  --nCPU 1
 ```
 ###### Output: 
 The command will generate two FITS files in the `clean` folder:
@@ -999,21 +1050,120 @@ The command will generate two FITS files in the `clean` folder:
 Hogbom | 🟡 Medium | 🟡 Medium | Classic CLEAN, for point sources.
 SSD (Steepest-Descent Deconvolution)| 🔴 Very Slow | 🔴 Heavy | Gradient-based deconv, avoid unless you really need precise large-scale structures.
 WSCMS (Weighted Source Component Model Subtaction) | 🔴 Very Slow | 🔴 Heavy | Advanced method for complex sky models, but slow and memory-hungry.
+</details>    
     
+## Running DDFacet on a Cluster
+a.k.a Multinode Execution
+<details>
+    <summary style="cursor: pointer; color: #007bff;"> Click here to reveal the section </summary>
+
+| 📝 **Note**                                                   |
+| ------------------------------------------------------------ |
+| This section how to install tools and usage of DDFacet a multinode Cluster. The first part was validated faking multi-node execution on a Linux x86, the second part was validated on [Ruche Mesocentre Cluster](https://mesocentre.pages.centralesupelec.fr/user_doc/), a SLURM-based cluster, however feel free to crash & test it wherever you can. The procedure start with a distributed measurementSet and apply the MPI version of DDFacet.|  
+
+```mermaid
+graph LR;
+    A[Split-MS] --> B[MPI-DDFacet];
+    B --> C[image.fits];
+```
     
-### Multinode Execution
-#### Requirements
-- Multinode & multicore cluster
+### Distributed MeasurementSet
+The following steps explain how to properly split a measurementSet for multinode-DDFacet execution.
 - Dowload python casacore: `pip install python-casacore`
-- Having a distributed MeasuremenSet or download the script to split yours [here](https://github.com/Ophelie-Renaud/ddfacet-dft-fft-g2g-tutorials). Usage: 
-    ```python
-    python split_ms_tool.py /path/to/my.ms output_prefix --criterion field --n_splits 3
-    ```
-    *where `criterion field` ∈ [`time` (default: split by observation time), `scan` (split by scan number, continuous observation sequence), `field` (split by field/source ID), `spw` (split by spectral window (frequency), `channel` (split each spectral channel into a separate MS)], `n_splits` by default limited to your MS criterion field* .
+- Download the script to split measurementSet [here](https://github.com/Ophelie-Renaud/ddfacet-dft-fft-g2g-tutorials). 
+```python
+import os
+import shutil
+import numpy as np
+from casacore.tables import table
+import argparse
+
+def split_ms(ms_path, output_prefix, criterion='time', n_splits=2):
+    assert criterion in ['time', 'scan', 'field', 'spw'], "Critère non supporté pour split standard."
+
+    t = table(ms_path)
+    colname = {
+        'time': 'TIME',
+        'scan': 'SCAN_NUMBER',
+        'field': 'FIELD_ID',
+        'spw': 'DATA_DESC_ID'
+    }[criterion]
+
+    column = t.getcol(colname)
+    unique_vals = sorted(set(column))
+    print(f"📊 {criterion.upper()} values trouvées : {unique_vals}")
+
+    if n_splits > len(unique_vals):
+        print(f"⚠️ Seulement {len(unique_vals)} valeurs distinctes pour {colname}, ajustement de n_splits.")
+        n_splits = len(unique_vals)
+
+    groups = [[] for _ in range(n_splits)]
+    for i, val in enumerate(unique_vals):
+        groups[i % n_splits].append(val)
+
+    for i, group_vals in enumerate(groups):
+        val_str = ','.join(map(str, group_vals))
+        query_str = f"{colname} IN [{val_str}]"
+        sub = t.query(query_str)
+        out_path = f"{output_prefix}_{criterion}_{i}.ms"
+        if os.path.exists(out_path):
+            shutil.rmtree(out_path)
+        sub.copy(out_path, deep=True)
+        print(f"✅ Split {i} : {sub.nrows()} lignes -> {out_path}")
+
+    t.close()
+
+def split_by_channel(ms_path, output_prefix):
+    t = table(ms_path)
+    data = t.getcol('DATA')
+    n_channels = data.shape[1]
+    t.close()
+
+    print(f"📡 Nombre de canaux détectés : {n_channels}")
+
+    for chan_idx in range(n_channels):
+        print(f"\n📤 Extraction du canal {chan_idx}")
+        out_path = f"{output_prefix}_channel_{chan_idx}.ms"
+        if os.path.exists(out_path):
+            shutil.rmtree(out_path)
+        shutil.copytree(ms_path, out_path)
+
+        t_out = table(out_path, readonly=False)
+        data_all = t_out.getcol('DATA')
+        masked_data = np.zeros_like(data_all)
+        masked_data[:, chan_idx, :] = data_all[:, chan_idx, :]
+        t_out.putcol('DATA', masked_data)
+        t_out.close()
+
+        print(f"✅ Canal {chan_idx} sauvegardé dans : {out_path}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Split Measurement Set (MS) selon divers critères.")
+    parser.add_argument("ms_path", help="Chemin vers le MS d'entrée.")
+    parser.add_argument("output_prefix", help="Préfixe ou dossier de sortie.")
+    parser.add_argument("--criterion", choices=['time', 'scan', 'field', 'spw', 'channel'], default='time',
+                        help="Critère de découpe (par défaut: time).")
+    parser.add_argument("--n_splits", type=int, default=2,
+                        help="Nombre de splits (non utilisé si criterion=channel).")
+
+    args = parser.parse_args()
+
+    if args.criterion == 'channel':
+        split_by_channel(args.ms_path, args.output_prefix)
+    else:
+        split_ms(args.ms_path, args.output_prefix, criterion=args.criterion, n_splits=args.n_splits)
+```
+Usage: 
+```bash
+python split_ms_tool.py /path/to/my.ms output_prefix --criterion field --n_splits 3
+```
+*where `criterion field` ∈ [`time` (default: split by observation time), `scan` (split by scan number, continuous observation sequence), `field` (split by field/source ID), `spw` (split by spectral window (frequency), `channel` (split each spectral channel into a separate MS)], `n_splits` by default limited to your MS criterion field* .
 
 
+### Fake a Multinode execution on your laptop 
     
-
+Here after are examples of command line usage running MPI version of DDFacet on your laptop. For the expected results explanation please refer to section single node execution where the DDFacet options used are basically the same.
+    
 #### Default imaging (dirty map)
 Change the measurementSets names with your distributed measuremenSets names.
 ```
@@ -1041,7 +1191,7 @@ mpirun -np 2 singularity exec -B /home -B /media/tasse/data \
 <p align="center">
   <img src="https://hackmd.io/_uploads/rytkVN2Glx.png" alt="Figure DDFacet" width="400"/>
   <br>
-  <em>The following command enables the reconstruction of a distributed MeasurementSet across a multi-node architecture, based on the work by N. Monnier et al: <a href="https://hal.science/hal-03729202/document">DDFacet parallel</a>.</em>
+    <sub>The Figure gives an overview of the parallelization implemented within DDFacet. The following command enables the reconstruction of a distributed MeasurementSet across a multi-node architecture, based on the work by N. Monnier et al: <a href="https://hal.science/hal-03729202/document">DDFacet parallel</a>.</sub>
 </p>
 
 
@@ -1062,8 +1212,110 @@ mpirun -np 2 singularity exec -B /home -B /media/tasse/data \
 --Deconv-MaxMinorIter 5
 ```
 
+### Execution on Ruche Mesocentre
+    
+For this part, it is better to have a Ruche Mesocentre account, here the procedure:
+- Check your eligibility: Ruche is accessible to all reserchers from ENS Paris-Saclay, CentraleSupélec, Université Paris-Saclay, Maison de la Simulation, otherwise you can pay.
+- Prepare a [project referee](https://mesocentre.universite-paris-saclay.fr/ruche/project_creation_form.html.txt?utm_source=chatgpt.com)
+- Send the document to the support: ruche.support@universite-paris-saclay.fr
+    
+    
+However you can easily adapt for a slurm based cluster.
+    
+Ruche Mesocentre is a SLURM-base cluster. SLURM is ... in our case it allow to run DDFacet on multinode cluster. Here after is the slurm.sh file:
+```shell
+#!/bin/bash
+#SBATCH --job-name=ddfacet_job
+#SBATCH --output=%x.out
+#SBATCH --error=%x.err
+#SBATCH --time=02:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=2
+#SBATCH --partition=cpu_med
+
+set -x   # mode debug
+
+# Chargement des modules
+module purge
+module load intel/19.0.3/gcc-4.8.5
+module load singularity/3.8.3/gcc-11.2.0
+
+# Nettoyage environnement Python utilisateur
+unset PYTHONPATH
+export PYTHONNOUSERSITE=1
+export PYTHONUSERBASE=/tmp
+
+# HOME factice dans le conteneur
+FAKE_HOME="/tmp/fakehome_${SLURM_JOB_ID}"
+mkdir -p $FAKE_HOME
+
+# Lancement sans le vrai $HOME 
+srun singularity exec --cleanenv --no-home \
+    -H $FAKE_HOME \
+    -B /gpfs/users/renaudo/data:/media/tasse/data \
+    -B /home/renaudo/Template.parset:/media/tasse/Template.parset \
+    ./ddf_dev_np1.22.4.sif DDF.py /media/tasse/Template.parset \
+    --Data-MS /media/tasse/data/0000.MS,/media/tasse/data/0000.MS \
+    --Output-Name /media/tasse/data/clean/test \
+    --Output-Mode Clean \
+    --Deconv-Mode HMP \
+    --Freq-NBand 3 \
+    --Freq-NDegridBand 1 \
+    --Mask-Auto True \
+    --Mask-SigTh 15 \
+    --Mask-AutoRMSFactor 3 \
+    --Deconv-MaxMajorIter 1 \
+    --Deconv-MaxMinorIter 5
+    
+```    
+- Transfer the mandatory file on the Cluster:  
+    
+```bash
+rsync -avh --progress ddf_dev_np1.22.4.sif renaudo@ruche.mesocentre.universite-paris-saclay.fr:/home/renaudo/
+rsync -avh --progress Template.parset renaudo@ruche.mesocentre.universite-paris-saclay.fr:/home/renaudo/
+rsync -avh --progress SB155.rebin.ms renaudo@ruche.mesocentre.universite-paris-saclay.fr:/home/renaudo/
+rsync -avh --progress slurm.sh renaudo@ruche.mesocentre.universite-paris-saclay.fr:/home/renaudo/
+```
+    
+- Connect and prepare the workspace   
+```bash
+ssh renaudo@ruche.mesocentre.universite-paris-saclay.fr
+cd /home/renaudo/
+mkdir -p /gpfs/users/renaudo/data
+```
+    
+- Submit the job
+```bash
+sbatch slurm.sh
+```
+    
+- (optional) Commands for monitoring
+```bash
+squeue -u renaudo         # check job status
+cat ddfacet_job.out       # standard output
+cat ddfacet_job.err       # error logs
+```
+    
+- Generated files are stored in `ls -lh ~/clean`. To copy them back locally:
+`rsync -avh --progress renaudo@ruche.mesocentre.universite-paris-saclay.fr:/gpfs/users/renaudo/clean/ ~/local/path/clean/`
+    
+### Multiple Chain Execution of Distributed MSs on a Ruche
+
+</details>
+
 
 ## Note
 :warning: *This tutorial has been tested from the `SB155.rebin.ms` mesuremenSet obtained from NenuFAR via nancep.* 
-We still need to figure out the proper way to build a multi-frequency image cube (i.e., one image per frequency channel or subband). Contributions and ideas are welcome!
-                           
+Contributions and ideas are welcome!
+    
+
+
+
+
+## Contact  
+
+For questions or feedback, please contact:  
+
+- This tutorial was written by [Ophélie Renaud](mailto:ophelie.renaud@ens-paris-saclay.fr) from PREESM/SimSDP community (previously @INSA, @IETR, now @SATIE paris-saclay, @IRISA, @ENS Rennes :fr:).
+    
+   
